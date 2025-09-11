@@ -1,41 +1,77 @@
 // Add event listeners
-chrome.runtime.onMessage.addListener(function(request, sender, sendResponse) {
-  console.log('REQUEST', request.method, request)
-  if (request.method == "getAllLocalStorage") {
-    sendResponse({data: localStorage});
-  }
-  else if (request.method == "getLocalStorage") {
-    sendResponse({data: localStorage[request.key]});
-  }
-  else if (request.method == "setLocalStorage") {
-    localStorage[request.key] = request.value;
-    sendResponse({});
-  }
-  else if (request.method == "getUserData") {
-    var data = getUserData(request.usernames);
-    sendResponse({ data: data });
-  }
-  else {
-    sendResponse({});
-  }
+chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
+  console.log('REQUEST', request.method, request);
+  
+  handleMessage(request).then(sendResponse);
+  return true;
 });
 
-function getUserData(usernames) {
-  var results = {};
-  for (var i = 0; i < usernames.length; i++) {
-    var key = usernames[i],
-        value = localStorage[key];
-    results[key] = value;
+async function handleMessage(request) {
+  try {
+    switch (request.method) {
+      case "getAllLocalStorage":
+        const all = await chrome.storage.local.get(null);
+        return {data: all};
+      
+      case "getLocalStorage":
+        const key = request.key.toString();
+        const item = await chrome.storage.local.get(key);
+        return {data: item[key]};
+      
+      case "setLocalStorage":
+        await chrome.storage.local.set({
+          [request.key.toString()]: request.value
+        });
+        return {};
+      
+      case "getUserData":
+        const userData = await getUserData(request.usernames);
+        return {data: userData};
+      
+      default:
+        return {};
+    }
+  } catch (error) {
+    console.error('Error handling message:', error);
+    return {error: error.message};
   }
-  return results;
 }
 
-//expire old entries
-(function() {
-  for (i=0; i<localStorage.length; i++) {
-    var info = JSON.parse(localStorage[localStorage.key(i)]);
-    var now = new Date().getTime();
-    if (now > info.expire)
-      localStorage.removeItem(localStorage.key(i));
+async function getUserData(usernames) {
+  try {
+    const keys = Array.isArray(usernames) ? 
+      usernames.map(u => u.toString()) : 
+      [usernames.toString()];
+    
+    const results = {};
+    const data = await chrome.storage.local.get(keys);
+    for (const username of keys) {
+      results[username] = data[username];
+    }
+    return results;
+  } catch (error) {
+    console.error('Error getting user data:', error);
+    return {};
   }
-});
+}
+
+// Cleanup function
+(async function() {
+  try {
+    const all = await chrome.storage.local.get(null);
+    const now = new Date().getTime();
+    
+    for (const [key, value] of Object.entries(all)) {
+      try {
+        const info = JSON.parse(value);
+        if (info.expire && now > info.expire) {
+          await chrome.storage.local.remove(key);
+        }
+      } catch (e) {
+        console.error('Error parsing stored data:', e);
+      }
+    }
+  } catch (error) {
+    console.error('Error in cleanup:', error);
+  }
+})();
