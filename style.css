@@ -697,6 +697,127 @@ body#login-body {
   border-left: 2px solid #f60;
 }
 
+/* borders indicating comments new since last visit (history-based) */
+.hnes-new-parent-since-last-visit {
+  border-left: 2px solid #85bc9b;
+}
+.hnes-new-since-last-visit {
+  border-left: 2px solid #60f680;
+  background-color: rgba(96, 246, 128, 0.1);
+}
+
+/* History navigation interface */
+#hnes-history-nav {
+  background: #f6f6ef;
+  border: 1px solid #e6e6df;
+  border-radius: 4px;
+  margin: 10px 0;
+  font-size: 13px;
+}
+
+.hnes-history-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 8px 12px;
+  background: #fafafa;
+  border-bottom: 1px solid #e6e6df;
+  border-radius: 4px 4px 0 0;
+}
+
+.hnes-history-title {
+  font-weight: bold;
+  color: #333;
+}
+
+.hnes-history-toggle {
+  background: #f60;
+  color: white;
+  border: none;
+  padding: 4px 8px;
+  border-radius: 3px;
+  cursor: pointer;
+  font-size: 11px;
+}
+
+.hnes-history-toggle:hover {
+  background: #e55100;
+}
+
+.hnes-history-content {
+  padding: 12px;
+}
+
+.hnes-history-description {
+  margin: 0 0 10px 0;
+  color: #666;
+  font-size: 12px;
+}
+
+.hnes-history-list {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin-bottom: 12px;
+  max-height: 200px;
+  overflow-y: auto;
+}
+
+.hnes-history-item {
+  background: white;
+  border: 1px solid #ddd;
+  border-radius: 3px;
+  padding: 8px 10px;
+  cursor: pointer;
+  text-align: left;
+  transition: all 0.2s ease;
+}
+
+.hnes-history-item:hover {
+  background: #f9f9f9;
+  border-color: #f60;
+}
+
+.hnes-history-item.active {
+  background: #fff5f0;
+  border-color: #f60;
+  box-shadow: 0 0 0 1px #f60;
+}
+
+.hnes-history-date {
+  font-weight: bold;
+  color: #333;
+  font-size: 12px;
+}
+
+.hnes-history-meta {
+  color: #666;
+  font-size: 11px;
+  margin-top: 2px;
+}
+
+.hnes-history-reset {
+  background: #666;
+  color: white;
+  border: none;
+  padding: 6px 12px;
+  border-radius: 3px;
+  cursor: pointer;
+  font-size: 11px;
+}
+
+.hnes-history-reset:hover {
+  background: #555;
+}
+
+/* Current comment navigation highlighting */
+.hnes-current-new-comment {
+  border-left: 4px solid #f60 !important;
+  background-color: rgba(255, 102, 0, 0.15) !important;
+  box-shadow: 0 0 8px rgba(255, 102, 0, 0.3);
+  transition: all 0.3s ease;
+}
+
 .hnes-age,
 .hnes-actions {
     margin-left: .5em;

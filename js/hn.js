@@ -135,7 +135,22 @@ var CommentTracker = {
     HN.getLocalStorage(page_info.id, function(response) {
       var data = response.data;
       var prev_last_id = CommentTracker.process(data, page_info);
+      
+      // Get stored data to access comment history
+      var info = data ? JSON.parse(data) : null;
+      
+      // Store the info globally for history navigation
+      CommentTracker.currentPageInfo = info;
+      
+      // Highlight new comments using both traditional method and history-based method
       CommentTracker.highlightNewComments(prev_last_id);
+      CommentTracker.highlightNewCommentsFromHistory(info);
+      
+      // Add history navigation UI if there's history data
+      CommentTracker.addHistoryNavigation(info);
+      
+      // Initialize keyboard navigation for new comments
+      CommentTracker.initKeyboardNavigation();
     });
   },
 
@@ -217,10 +232,436 @@ var CommentTracker = {
     if (request.last_comment_id)
       info.last_comment_id = request.last_comment_id;
 
+    // Track comment history for highlighting previously seen comments
+    CommentTracker.updateCommentHistory(info, request);
+
     // store info
     HN.setLocalStorage(request.id, JSON.stringify(info));
 
     return last_comment_id;
+  },
+
+  updateCommentHistory: function(info, request) {
+    // Initialize comment history if it doesn't exist
+    if (!info.comment_history) {
+      info.comment_history = [];
+    }
+
+    // Get current comments on the page
+    var current_comments = CommentTracker.getCurrentCommentIds();
+    
+    // Check if we need to add a new entry
+    var shouldAddEntry = true;
+    
+    if (info.comment_history.length > 0) {
+      var lastEntry = info.comment_history[info.comment_history.length - 1];
+      
+      // Don't add entry if last_comment_id is the same (no new comments)
+      if (lastEntry.last_comment_id === request.last_comment_id) {
+        shouldAddEntry = false;
+      }
+      
+      // Also check if the comment list is identical (in case IDs are same but structure changed)
+      if (shouldAddEntry && current_comments.length === lastEntry.comment_ids.length) {
+        var commentsMatch = current_comments.every(function(id, index) {
+          return id === lastEntry.comment_ids[index];
+        });
+        
+        if (commentsMatch) {
+          shouldAddEntry = false;
+        }
+      }
+    }
+    
+    // Only add new entry if there are actual changes
+    if (shouldAddEntry) {
+      var snapshot = {
+        timestamp: new Date().getTime(),
+        comment_ids: current_comments,
+        last_comment_id: request.last_comment_id
+      };
+
+      // Add to history and keep only the last 10 visits
+      info.comment_history.push(snapshot);
+      if (info.comment_history.length > 10) {
+        info.comment_history.shift();
+      }
+    } else {
+      // Update timestamp of last entry to reflect the current visit
+      if (info.comment_history.length > 0) {
+        info.comment_history[info.comment_history.length - 1].timestamp = new Date().getTime();
+      }
+    }
+  },
+
+  getCurrentCommentIds: function() {
+    var ids = [];
+    var comments = document.querySelectorAll('.hnes-comment');
+    
+    for (var i = 0; i < comments.length; i++) {
+      var id = comments[i].getAttribute('id');
+      if (id) {
+        ids.push(Number(id));
+      }
+    }
+    
+    return ids.sort(function(a,b){return a-b});
+  },
+
+  getCommentsSinceLastVisit: function(comment_history) {
+    if (!comment_history || comment_history.length < 2) {
+      return [];
+    }
+
+    // Get the previous visit's comment IDs (second to last entry)
+    var prev_visit = comment_history[comment_history.length - 2];
+    var current_comments = CommentTracker.getCurrentCommentIds();
+    
+    // Find comments that weren't present in the previous visit
+    var new_comments = current_comments.filter(function(id) {
+      return prev_visit.comment_ids.indexOf(id) === -1;
+    });
+
+    return new_comments;
+  },
+
+  highlightNewCommentsFromHistory: function(info, compareToIndex) {
+    if (!info || !info.comment_history) {
+      return;
+    }
+
+    var new_comments;
+    if (typeof compareToIndex !== 'undefined') {
+      // Compare to a specific point in history
+      new_comments = CommentTracker.getCommentsSinceHistoryPoint(info.comment_history, compareToIndex);
+    } else {
+      // Default: compare to last visit
+      new_comments = CommentTracker.getCommentsSinceLastVisit(info.comment_history);
+    }
+    
+    // Clear previous history highlighting
+    CommentTracker.clearHistoryHighlighting();
+    
+    // Apply history-based highlighting
+    for (var i = 0; i < new_comments.length; i++) {
+      var comment_id = new_comments[i];
+      var comment_el = document.getElementById(comment_id);
+      
+      if (comment_el && HN.hnComments && HN.hnComments.nodeMap) {
+        var comment = HN.hnComments.nodeMap[comment_id];
+        if (comment && comment.el) {
+          // Add a different class for history-based new comments
+          comment.el.classList.add('hnes-new-since-last-visit');
+          
+          // Also mark parent comments to show there are new replies
+          var parent = comment.parent;
+          while (parent && parent.level > 0) {
+            if (!parent.el.classList.contains('hnes-new-since-last-visit')) {
+              parent.el.classList.add('hnes-new-parent-since-last-visit');
+            }
+            parent = parent.parent;
+          }
+        }
+      }
+    }
+    
+    // Update keyboard navigation list after highlighting changes
+    CommentTracker.updateNewCommentsList();
+  },
+
+  getCommentsSinceHistoryPoint: function(comment_history, compareToIndex) {
+    if (!comment_history || compareToIndex >= comment_history.length || compareToIndex < 0) {
+      return [];
+    }
+
+    var compare_visit = comment_history[compareToIndex];
+    var current_comments = CommentTracker.getCurrentCommentIds();
+    
+    // Find comments that weren't present at the comparison point
+    var new_comments = current_comments.filter(function(id) {
+      return compare_visit.comment_ids.indexOf(id) === -1;
+    });
+
+    return new_comments;
+  },
+
+  clearHistoryHighlighting: function() {
+    var comments = document.querySelectorAll('.hnes-new-since-last-visit, .hnes-new-parent-since-last-visit');
+    for (var i = 0; i < comments.length; i++) {
+      comments[i].classList.remove('hnes-new-since-last-visit', 'hnes-new-parent-since-last-visit');
+    }
+  },
+
+  addHistoryNavigation: function(info) {
+    if (!info || !info.comment_history || info.comment_history.length < 2) {
+      return;
+    }
+
+    // Create history navigation UI
+    var historyNav = document.createElement('div');
+    historyNav.id = 'hnes-history-nav';
+    historyNav.innerHTML = `
+      <div class="hnes-history-header">
+        <span class="hnes-history-title">Comment History</span>
+        <button class="hnes-history-toggle">Show History</button>
+      </div>
+      <div class="hnes-history-content" style="display: none;">
+        <p class="hnes-history-description">Select a previous visit to highlight comments that were new since then:</p>
+        <div class="hnes-history-list"></div>
+        <button class="hnes-history-reset">Reset to Current</button>
+      </div>
+    `;
+
+    // Insert the navigation UI after the loading comments element or at the top of comments
+    var insertPoint = document.getElementById('loading_comments') || 
+                     document.getElementById('hnes-comments') ||
+                     document.querySelector('.comments-table');
+    
+    if (insertPoint) {
+      insertPoint.parentNode.insertBefore(historyNav, insertPoint);
+    }
+
+    // Populate history list
+    var historyList = historyNav.querySelector('.hnes-history-list');
+    for (var i = info.comment_history.length - 2; i >= 0; i--) {
+      var visit = info.comment_history[i];
+      var visitButton = document.createElement('button');
+      visitButton.className = 'hnes-history-item';
+      visitButton.dataset.historyIndex = i;
+      
+      var date = new Date(visit.timestamp);
+      var timeAgo = CommentTracker.getTimeAgo(visit.timestamp);
+      var commentCount = visit.comment_ids.length;
+      
+      visitButton.innerHTML = `
+        <div class="hnes-history-date">${date.toLocaleDateString()} ${date.toLocaleTimeString()}</div>
+        <div class="hnes-history-meta">${timeAgo} • ${commentCount} comments</div>
+      `;
+      
+      historyList.appendChild(visitButton);
+    }
+
+    // Add event listeners
+    CommentTracker.setupHistoryNavListeners(historyNav, info);
+  },
+
+  setupHistoryNavListeners: function(historyNav, info) {
+    // Toggle history panel
+    var toggleButton = historyNav.querySelector('.hnes-history-toggle');
+    var content = historyNav.querySelector('.hnes-history-content');
+    
+    toggleButton.addEventListener('click', function() {
+      var isVisible = content.style.display !== 'none';
+      content.style.display = isVisible ? 'none' : 'block';
+      toggleButton.textContent = isVisible ? 'Show History' : 'Hide History';
+    });
+
+    // History item selection
+    var historyItems = historyNav.querySelectorAll('.hnes-history-item');
+    for (var i = 0; i < historyItems.length; i++) {
+      historyItems[i].addEventListener('click', function() {
+        // Remove active class from all items
+        for (var j = 0; j < historyItems.length; j++) {
+          historyItems[j].classList.remove('active');
+        }
+        
+        // Add active class to clicked item
+        this.classList.add('active');
+        
+        // Highlight comments since this point
+        var historyIndex = parseInt(this.dataset.historyIndex);
+        CommentTracker.highlightNewCommentsFromHistory(info, historyIndex);
+      });
+    }
+
+    // Reset button
+    var resetButton = historyNav.querySelector('.hnes-history-reset');
+    resetButton.addEventListener('click', function() {
+      // Remove active class from all items
+      for (var i = 0; i < historyItems.length; i++) {
+        historyItems[i].classList.remove('active');
+      }
+      
+      // Reset to default highlighting (last visit)
+      CommentTracker.highlightNewCommentsFromHistory(info);
+    });
+  },
+
+  getTimeAgo: function(timestamp) {
+    var now = new Date().getTime();
+    var diff = now - timestamp;
+    var minutes = Math.floor(diff / (1000 * 60));
+    var hours = Math.floor(diff / (1000 * 60 * 60));
+    var days = Math.floor(diff / (1000 * 60 * 60 * 24));
+    
+    if (days > 0) {
+      return days + ' day' + (days > 1 ? 's' : '') + ' ago';
+    } else if (hours > 0) {
+      return hours + ' hour' + (hours > 1 ? 's' : '') + ' ago';
+    } else if (minutes > 0) {
+      return minutes + ' minute' + (minutes > 1 ? 's' : '') + ' ago';
+    } else {
+      return 'Just now';
+    }
+  },
+
+  // Keyboard navigation for new comments
+  currentNewCommentIndex: -1,
+  newCommentElements: [],
+
+  initKeyboardNavigation: function() {
+    // Cache new comment elements for navigation
+    CommentTracker.updateNewCommentsList();
+
+    // Add keyboard event listener
+    document.addEventListener('keydown', CommentTracker.handleKeyboardNavigation);
+  },
+
+  updateNewCommentsList: function() {
+    // Get all new comments (both types)
+    var newComments = document.querySelectorAll('.hnes-new, .hnes-new-since-last-visit');
+    CommentTracker.newCommentElements = Array.from(newComments);
+    
+    // Sort by document position (top to bottom)
+    CommentTracker.newCommentElements.sort(function(a, b) {
+      var position = a.compareDocumentPosition(b);
+      if (position & Node.DOCUMENT_POSITION_FOLLOWING) {
+        return -1;
+      } else if (position & Node.DOCUMENT_POSITION_PRECEDING) {
+        return 1;
+      }
+      return 0;
+    });
+    
+    // Reset current index
+    CommentTracker.currentNewCommentIndex = -1;
+  },
+
+  handleKeyboardNavigation: function(e) {
+    // Only handle if not in an input field and no modifier keys
+    if (e.target.tagName === 'INPUT' || e.target.tagName === 'TEXTAREA' || 
+        e.ctrlKey || e.metaKey || e.altKey) {
+      return;
+    }
+
+    var handled = false;
+
+    switch(e.key) {
+      case 'n': // Next new comment
+      case 'N':
+        CommentTracker.navigateToNewComment('next');
+        handled = true;
+        break;
+      
+      case 'p': // Previous new comment  
+      case 'P':
+        CommentTracker.navigateToNewComment('prev');
+        handled = true;
+        break;
+    }
+
+    if (handled) {
+      e.preventDefault();
+      e.stopPropagation();
+    }
+  },
+
+  navigateToNewComment: function(direction) {
+    if (CommentTracker.newCommentElements.length === 0) {
+      CommentTracker.showNavigationMessage('No new comments found');
+      return;
+    }
+
+    var newIndex;
+    
+    if (direction === 'next') {
+      newIndex = CommentTracker.currentNewCommentIndex + 1;
+      if (newIndex >= CommentTracker.newCommentElements.length) {
+        newIndex = 0; // Wrap to first
+      }
+    } else {
+      newIndex = CommentTracker.currentNewCommentIndex - 1;
+      if (newIndex < 0) {
+        newIndex = CommentTracker.newCommentElements.length - 1; // Wrap to last
+      }
+    }
+
+    CommentTracker.currentNewCommentIndex = newIndex;
+    var targetComment = CommentTracker.newCommentElements[newIndex];
+    
+    // Remove previous highlighting
+    CommentTracker.clearCurrentCommentHighlight();
+    
+    // Add current comment highlighting
+    targetComment.classList.add('hnes-current-new-comment');
+    
+    // Scroll to comment with smooth animation
+    CommentTracker.scrollToComment(targetComment);
+    
+    // Show navigation info
+    var total = CommentTracker.newCommentElements.length;
+    var current = newIndex + 1;
+    CommentTracker.showNavigationMessage(`New comment ${current} of ${total}`);
+  },
+
+  clearCurrentCommentHighlight: function() {
+    var currentElements = document.querySelectorAll('.hnes-current-new-comment');
+    for (var i = 0; i < currentElements.length; i++) {
+      currentElements[i].classList.remove('hnes-current-new-comment');
+    }
+  },
+
+  scrollToComment: function(element) {
+    var rect = element.getBoundingClientRect();
+    var offset = 80; // Offset from top for better visibility
+    
+    window.scrollTo({
+      top: window.pageYOffset + rect.top - offset,
+      behavior: 'smooth'
+    });
+  },
+
+  showNavigationMessage: function(message) {
+    // Remove existing message
+    var existingMsg = document.getElementById('hnes-nav-message');
+    if (existingMsg) {
+      existingMsg.remove();
+    }
+
+    // Create new message
+    var messageEl = document.createElement('div');
+    messageEl.id = 'hnes-nav-message';
+    messageEl.textContent = message;
+    messageEl.style.cssText = `
+      position: fixed;
+      top: 20px;
+      right: 20px;
+      background: #333;
+      color: white;
+      padding: 8px 12px;
+      border-radius: 4px;
+      font-size: 13px;
+      z-index: 10000;
+      opacity: 0;
+      transition: opacity 0.3s ease;
+    `;
+
+    document.body.appendChild(messageEl);
+
+    // Animate in
+    setTimeout(function() {
+      messageEl.style.opacity = '1';
+    }, 10);
+
+    // Remove after 2 seconds
+    setTimeout(function() {
+      messageEl.style.opacity = '0';
+      setTimeout(function() {
+        if (messageEl.parentNode) {
+          messageEl.parentNode.removeChild(messageEl);
+        }
+      }, 300);
+    }, 2000);
   },
 
   checkIndexPage: function() {
