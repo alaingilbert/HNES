@@ -136,21 +136,23 @@ var CommentTracker = {
       var data = response.data;
       var prev_last_id = CommentTracker.process(data, page_info);
       
-      // Get stored data to access comment history
-      var info = data ? JSON.parse(data) : null;
-      
-      // Store the info globally for history navigation
-      CommentTracker.currentPageInfo = info;
-      
-      // Highlight new comments using both traditional method and history-based method
-      CommentTracker.highlightNewComments(prev_last_id);
-      CommentTracker.highlightNewCommentsFromHistory(info);
-      
-      // Add history navigation UI if there's history data
-      CommentTracker.addHistoryNavigation(info);
-      
-      // Initialize keyboard navigation for new comments
-      CommentTracker.initKeyboardNavigation();
+      // Get the updated stored data after processing to access current comment history
+      HN.getLocalStorage(page_info.id, function(updatedResponse) {
+        var updatedInfo = updatedResponse.data ? JSON.parse(updatedResponse.data) : null;
+        
+        // Store the info globally for history navigation
+        CommentTracker.currentPageInfo = updatedInfo;
+        
+        // Highlight new comments using both traditional method and history-based method
+        CommentTracker.highlightNewComments(prev_last_id);
+        CommentTracker.highlightNewCommentsFromHistory(updatedInfo);
+        
+        // Add history navigation UI if there's history data
+        CommentTracker.addHistoryNavigation(updatedInfo);
+        
+        // Initialize keyboard navigation for new comments
+        CommentTracker.initKeyboardNavigation();
+      });
     });
   },
 
