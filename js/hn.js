@@ -448,14 +448,24 @@ var CommentTracker = {
   },
 
   setupHistoryNavListeners: function(historyNav, info) {
-    // Toggle history panel
+    // Toggle history panel - make entire header clickable
     var toggleButton = historyNav.querySelector('.hnes-history-toggle');
     var content = historyNav.querySelector('.hnes-history-content');
+    var header = historyNav.querySelector('.hnes-history-header');
     
-    toggleButton.addEventListener('click', function() {
+    var toggleFunction = function() {
       var isVisible = content.style.display !== 'none';
       content.style.display = isVisible ? 'none' : 'block';
       toggleButton.textContent = isVisible ? 'Show History' : 'Hide History';
+    };
+    
+    // Add click handler to entire header div
+    header.addEventListener('click', toggleFunction);
+    
+    // Also keep the button handler for backwards compatibility
+    toggleButton.addEventListener('click', function(e) {
+      e.stopPropagation(); // Prevent double-triggering from header click
+      toggleFunction();
     });
 
     // History item selection
